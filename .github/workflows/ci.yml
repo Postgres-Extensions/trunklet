@@ -1,0 +1,139 @@
+name: CI
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+env:
+  PGUSER: postgres
+jobs:
+  # Cheap gate that lets the test matrix below skip itself on commits that
+  # touch only docs. Runs on every push/pull_request unconditionally (no
+  # paths-ignore on the workflow itself) -- a workflow-level paths-ignore
+  # would skip this job too on a docs-only push, and the required
+  # all-checks-passed check would then never report and get stuck Pending in
+  # branch protection.
+  #
+  # Also derives the supported-PostgreSQL-major list the test job's matrix
+  # consumes, from a single pair of constants below, so adding or dropping a
+  # major is a one-line edit here instead of touching the matrix directly.
+  changes:
+    name: 🔍 Detect changes & derive PG matrix
+    runs-on: ubuntu-latest
+    outputs:
+      docs_only: ${{ steps.diff.outputs.docs_only }}
+      supported_pg: ${{ steps.pg.outputs.supported_pg }}
+    steps:
+      - name: Check out the repo
+        uses: actions/checkout@v4
+        with:
+          # Full history needed so BASE and HEAD below are both reachable
+          # for `git diff`.
+          fetch-depth: 0
+      - name: Compute per-push changed files
+        id: diff
+        run: |
+          # Fail-safe FIRST, before anything else runs: any early exit below
+          # (an unusable BASE/HEAD, a failed git diff) leaves this in place,
+          # so the test matrix only ever gets skipped after actually proving
+          # the push is docs-only.
+          echo "docs_only=false" >> "$GITHUB_OUTPUT"
+
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASE="${{ github.event.pull_request.base.sha }}"
+            HEAD="${{ github.event.pull_request.head.sha }}"
+          else
+            BASE="${{ github.event.before }}"
+            HEAD="${{ github.event.after }}"
+          fi
+
+          echo "base=$BASE"
+          echo "head=$HEAD"
+
+          # A missing HEAD, or an all-zeros BASE (a new branch's first push,
+          # where GitHub reports no prior commit), means no real diff can be
+          # computed -- leave the fail-safe in place.
+          if [ -z "$HEAD" ] || [ -z "$BASE" ] || [[ "$BASE" =~ ^0+$ ]]; then
+            exit 0
+          fi
+
+          CHANGED=$(git diff --name-only "$BASE" "$HEAD") || exit 0
+          [ -z "$CHANGED" ] && exit 0
+
+          DOCS_ONLY=true
+          while IFS= read -r f; do
+            if ! [[ "$f" =~ \.(md|asc)$ ]]; then
+              DOCS_ONLY=false
+              break
+            fi
+          done <<< "$CHANGED"
+
+          echo "changed files:"
+          echo "$CHANGED"
+          echo "docs_only=$DOCS_ONLY" >> "$GITHUB_OUTPUT"
+      - name: Derive the supported-PostgreSQL-major list
+        id: pg
+        run: |
+          # SINGLE SOURCE OF TRUTH for the supported PostgreSQL majors. To add
+          # or drop a major, edit ONLY the constants and the 9.x tail below; the
+          # test job's matrix derives from them (adding the newest major is a
+          # one-line NEWEST bump). Do NOT hardcode a supported major in a job
+          # matrix.
+          #
+          #   NEWEST -- highest PostgreSQL major tested.
+          #   FLOOR  -- oldest integer major (10+) supported. Supported
+          #             versions older than that are the 9.x tail below. The
+          #             overall floor is 9.5: tests use jsonb_object, added in
+          #             9.5 (see META.in.json).
+          NEWEST=18
+          FLOOR=10
+
+          # seq can't express 9.x, so those majors are listed explicitly. When
+          # 9.x support is dropped, delete the tail and make this a plain
+          # `seq "$NEWEST" -1 "$FLOOR"` (FLOOR then becomes the overall floor).
+          supported="$(seq "$NEWEST" -1 "$FLOOR") 9.6 9.5"
+
+          # Emit a JSON array for the test job's matrix to consume via
+          # fromJSON.
+          json=$(printf '%s\n' $supported | paste -sd, - | sed 's/^/[/; s/$/]/')
+          echo "supported_pg=$json" >> "$GITHUB_OUTPUT"
+
+  test:
+    needs: [changes]
+    if: needs.changes.outputs.docs_only != 'true'
+    strategy:
+      matrix:
+        # Supported majors, from the single source in the changes job.
+        pg: ${{ fromJSON(needs.changes.outputs.supported_pg) }}
+    name: 🐘 PostgreSQL ${{ matrix.pg }}
+    runs-on: ubuntu-latest
+    container: pgxn/pgxn-tools
+    steps:
+      - name: Start PostgreSQL ${{ matrix.pg }}
+        run: pg-start ${{ matrix.pg }}
+      - name: Check out the repo
+        uses: actions/checkout@v4
+      - name: Test on PostgreSQL ${{ matrix.pg }}
+        # verify-results runs the same TEST_DEPS chain as `make test`, then
+        # inspects the pgTAP results (PGXNTOOL_ENABLE_VERIFY_RESULTS defaults
+        # to yes, PGXNTOOL_VERIFY_RESULTS_MODE to pgtap) and exits non-zero on
+        # failure.
+        run: make verify-results
+
+  # A single stable check name for use as a required status check in branch
+  # protection rules. Matrix jobs produce check names like "🐘 PostgreSQL 14"
+  # which would all need to be listed individually and updated whenever the
+  # matrix changes. This job passes if all others passed or were skipped
+  # (e.g. test, on a docs-only push), and fails if any failed or were
+  # cancelled.
+  all-checks-passed:
+    needs: [changes, test]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check all jobs passed or were skipped
+        run: |
+          if [[ "${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}" == "true" ]]; then
+            echo "One or more jobs failed or were cancelled"
+            exit 1
+          fi
