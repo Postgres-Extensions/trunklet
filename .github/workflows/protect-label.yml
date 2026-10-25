@@ -1,0 +1,146 @@
+name: Protect 'commit-with-no-tests' label
+
+on:
+  # IMPORTANT: Must use pull_request_target, NOT pull_request.
+  #
+  # 'pull_request' from a fork runs with a read-only GITHUB_TOKEN scoped to
+  # the fork. It cannot add or remove labels on the upstream repo (write
+  # operation), and cannot call getCollaboratorPermissionLevel (requires write
+  # permission to the target repo).
+  #
+  # 'pull_request_target' runs in the base repo's context with a token that
+  # has write access — exactly what we need here.
+  #
+  # Security: because pull_request_target has write access, never check out
+  # or execute code from the PR head in this workflow. This workflow only calls
+  # the GitHub API via actions/github-script and is safe.
+  pull_request_target:
+    types: [labeled, unlabeled]
+
+jobs:
+  protect:
+    # Only fire for the label we care about. All other label changes are
+    # unaffected by this workflow.
+    # Note: this literal must match the LABEL const defined in the script below.
+    if: github.event.label.name == 'commit-with-no-tests'
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write  # To add/remove labels
+      issues: write         # GitHub label API goes through the issues endpoint
+
+    steps:
+      - name: Enforce write-access-only on 'commit-with-no-tests' label
+        # Pinned to an immutable SHA: this workflow runs as pull_request_target
+        # with write access, so a moved upstream tag must not change what runs.
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
+        with:
+          script: |
+            const actor = context.actor;
+            const prNumber = context.payload.pull_request.number;
+            const action = context.payload.action; // 'labeled' or 'unlabeled'
+            // Single source of truth for the label name within this script.
+            // Must also match the literal in the job-level `if:` condition above
+            // (YAML expressions can't reference JS constants).
+            const LABEL = 'commit-with-no-tests';
+
+            // When this workflow re-adds or removes the label itself, that fires
+            // this event again with actor = 'github-actions[bot]'. Without this
+            // guard the job loops forever. We match any '[bot]' suffix to also
+            // cover other automation (Dependabot, Renovate, etc.).
+            if (actor.endsWith('[bot]')) {
+              core.info(`Actor is a bot (${actor}); skipping permission check`);
+              return;
+            }
+
+            // Check the actor's effective permission level in this repo.
+            //
+            // EDGE CASE — 404 for non-collaborators: This API returns 404 when
+            // the user is not an explicit collaborator. This is the normal case
+            // for contributors who forked and opened a PR. If we don't catch
+            // this error, the job crashes with an unhandled exception and the
+            // label stays in whatever state the contributor put it in —
+            // defeating the entire protection.
+            //
+            // EDGE CASE — org team members: Users with write access via org
+            // team membership (not a direct collaborator invite) correctly show
+            // as 'write' here because the API returns effective permission.
+            // Exception: if the org has "private member visibility" set and the
+            // token can't enumerate team membership, they may get a 404 instead.
+            // If that becomes an issue, add a fallback to
+            // github.rest.orgs.getMembershipForUser().
+            //
+            // EDGE CASE — other errors: Network blips, API outages, and rate
+            // limiting all throw here. We fail safe by treating any unexpected
+            // error as "no write access" and logging for debugging.
+            let hasWrite = false;
+            try {
+              const { data: perm } = await github.rest.repos.getCollaboratorPermissionLevel({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                username: actor
+              });
+              hasWrite = ['admin', 'write'].includes(perm.permission);
+            } catch (e) {
+              if (e.status === 404) {
+                // Not a collaborator — no write access. Expected and normal.
+                hasWrite = false;
+              } else {
+                core.warning(
+                  `Unexpected error checking permissions for ${actor} ` +
+                  `(HTTP ${e.status}): ${e.message}. Treating as no write access.`
+                );
+                hasWrite = false;
+              }
+            }
+
+            if (action === 'labeled' && !hasWrite) {
+              core.info(`${actor} lacks write access; removing '${LABEL}' label`);
+              await github.rest.issues.removeLabel({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: prNumber,
+                name: LABEL
+              });
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: prNumber,
+                body:
+                  `@${actor} The \`commit-with-no-tests\` label can only be applied by ` +
+                  `maintainers with write access to this repository.\n\n` +
+                  `If you believe no test changes are needed for this PR, please ask a ` +
+                  `maintainer to apply the label after reviewing. Note that most pgxntool ` +
+                  `changes do require paired test updates — this label should be used sparingly.`
+              });
+
+            } else if (action === 'unlabeled' && !hasWrite) {
+              // Non-writer removed the label. Put it back.
+              //
+              // EDGE CASE — brief label-absent window: There is a short window
+              // between removal and this workflow re-adding the label. During
+              // that window the label genuinely does not exist. This is harmless
+              // in practice: the ci.yml workflow reads labels via a live API
+              // call (not from its cached payload), so a re-run after the label
+              // is restored will pick it up correctly.
+              core.info(`${actor} lacks write access; re-adding '${LABEL}' label`);
+              await github.rest.issues.addLabels({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: prNumber,
+                labels: [LABEL]
+              });
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: prNumber,
+                body:
+                  `@${actor} The \`commit-with-no-tests\` label can only be removed by ` +
+                  `maintainers with write access to this repository.\n\n` +
+                  `Contact a maintainer if you believe this label was applied in error.`
+              });
+
+            } else if (hasWrite) {
+              core.info(
+                `${actor} has write access; '${action}' on '${LABEL}' label is approved`
+              );
+            }
