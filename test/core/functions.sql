@@ -779,14 +779,12 @@ BEGIN
     , $$template not found$$
   );
 
-  RETURN NEXT is(
-    ( SELECT row(g.*)::_trunklet.template FROM _trunklet.template__get( 'bogus', loose := true ) AS g )
-    , NULL::_trunklet.template
+  RETURN NEXT ok(
+    ( SELECT g IS NULL FROM _trunklet.template__get( 'bogus', loose := true ) AS g )
     , 'Verify template name with loose := true'
   );
-  RETURN NEXT is(
-    ( SELECT row(g.*)::_trunklet.template FROM _trunklet.template__get( -999, loose := true ) AS g )
-    , NULL::_trunklet.template
+  RETURN NEXT ok(
+    ( SELECT g IS NULL FROM _trunklet.template__get( -999, loose := true ) AS g )
     , 'Verify template id with loose := true'
   );
 
