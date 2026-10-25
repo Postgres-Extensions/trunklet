@@ -1,0 +1,8 @@
+#!/bin/sh
+
+file=$1
+shift
+echo "editing file $file with options $@"
+sed "$@" <<_EOF_ > $file
+`cat $file`
+_EOF_

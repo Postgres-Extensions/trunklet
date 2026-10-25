@@ -1,11 +1,15 @@
 # Editor files
 .*.swp
 
+# Claude Code local settings
+.claude/*.local.json
+
 # Explicitly exclude META.json!
 !/META.json
 
 # Generated make files
 meta.mk
+control.mk
 
 # Compiler output
 *.o
@@ -13,14 +17,35 @@ meta.mk
 .deps/
 
 # built targets
-/sql/*--*
-!/sql/*--*--*.sql
+# Note: Version-specific files (sql/*--*.sql) are now tracked in git and should be committed
+
+# Post-tag placeholder version's generated SQL file (see PGXNTOOL_POST_TAG_VERSION
+# in README.asc's "post-tag-version-bump" section). Update both lines if you override that variable.
+# The negation keeps the update script (sql/{ext}--{old}--stable.sql) tracked.
+sql/*--stable.sql
+!sql/*--*--stable.sql
 
 # Test artifacts
 results/
 regression.diffs
 regression.out
 
+# Generated sql/ directory for test/build
+# Created by make test-build. See README.asc for details.
+test/build/sql/
+
+# Auto-generated schedule file for test/install
+# Created by make when test/install/*.sql files exist.
+test/install/schedule
+
+# test/install/*.out is rewritten by every `make test` run and never
+# meaningfully compared against anything (see base.mk's test/install
+# comments) -- there's no reason to commit it or track changes to it.
+test/install/*.out
+
 # Misc
 tmp/
 .DS_Store
+
+# pg_tle generated files
+/pg_tle/
