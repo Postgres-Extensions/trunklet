@@ -1,0 +1,9 @@
+\set ECHO none
+1..5
+
+1
+ok 1 - update 0.2.0 -> stable
+ok 2 - stored template still processes after update
+ok 3 - process(template_id, ...) exists after update
+ok 4 - Function trunklet.execute_text(text, anyelement) should exist
+ok 5 - Function trunklet.execute_into(integer, anyelement) should exist
