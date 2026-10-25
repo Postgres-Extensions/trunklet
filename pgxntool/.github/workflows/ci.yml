@@ -1,0 +1,367 @@
+name: CI
+
+on:
+  pull_request:
+    # We use 'pull_request' (not 'pull_request_target') deliberately.
+    # 'pull_request_target' runs with write access to the base repo, which is
+    # a security risk for untrusted fork code. Since this workflow only reads
+    # from other public repos (no secrets needed), 'pull_request' is correct
+    # and safe even for fork PRs.
+
+permissions:
+  contents: read        # required by actions/checkout in the reusable test workflow
+  pull-requests: read
+  checks: read
+
+concurrency:
+  group: ci-pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  check-test-pr:
+    name: Check for paired pgxntool-test PR
+    runs-on: ubuntu-latest
+    # This check polls until the paired pgxntool-test CI run completes
+    # (up to 20 minutes). The job timeout gives a few minutes of headroom.
+    timeout-minutes: 25
+    outputs:
+      run-tests: ${{ steps.check.outputs.run_tests }}
+      pgxntool-test-owner: ${{ steps.check.outputs.pgxntool_test_owner }}
+      pgxntool-test-ref: ${{ steps.check.outputs.pgxntool_test_ref }}
+
+    steps:
+      - name: Find paired pgxntool-test PR or check commit-with-no-tests label
+        id: check
+        # Pinned to an immutable SHA (supply-chain hardening); comment tracks the tag.
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
+        with:
+          # GITHUB_TOKEN is sufficient for reading public repos. If these repos
+          # are ever made private, replace with a PAT stored as a secret with
+          # 'repo' scope on both repos. Note: PAT expiration causes silent
+          # failures here — the API returns 401 and the job errors out instead
+          # of failing gracefully with a useful message.
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const branch = context.payload.pull_request.head.ref;
+            const prNumber = context.payload.pull_request.number;
+            // Single source of truth for the label name. Must also match the
+            // literal string in the protect-label.yml job-level `if:` condition
+            // (YAML expressions can't reference JS constants).
+            const NO_TEST_LABEL = 'commit-with-no-tests';
+
+            // DOC-ONLY BYPASS: skip both the paired-test-PR requirement and
+            // the actual Postgres test run when every changed file is pure
+            // documentation. This is independent of, and takes priority
+            // over, everything below — a doc-only PR needs neither a paired
+            // branch nor the NO_TEST_LABEL override.
+            //
+            // Files under .github/ are never doc-only even if their
+            // extension matches (they're workflow definitions with real
+            // behavioral weight, some running with pull_request_target
+            // privileges). Everything else — including .claude/*.md prompt
+            // and command docs, and README.html (a generated rendering of
+            // README.asc, no execution weight of its own) — counts.
+            //
+            // This does NOT skip claude-review: that's a separate workflow
+            // gated by its own `if:`, unaffected by this check's outputs.
+            const DOC_EXTENSIONS = /\.(md|asc|adoc|asciidoc|html)$/i;
+            const changedFiles = await github.paginate(github.rest.pulls.listFiles, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: prNumber,
+              per_page: 100
+            });
+            // Check both filename and previous_filename: a rename like
+            // src/foo.sql -> docs/foo.md must not read as doc-only just
+            // because the new name matches — the old path is a real change.
+            const changedPaths = changedFiles.flatMap(f =>
+              f.previous_filename ? [f.filename, f.previous_filename] : [f.filename]
+            );
+            const isDocOnly = changedPaths.length > 0 && changedPaths.every(p =>
+              DOC_EXTENSIONS.test(p) && !p.startsWith('.github/')
+            );
+            if (isDocOnly) {
+              core.info(
+                `All ${changedFiles.length} changed file(s) are documentation-only ` +
+                `(matched ${DOC_EXTENSIONS}, none under .github/); skipping the ` +
+                `paired-test-PR requirement and the Postgres test matrix.`
+              );
+              core.setOutput('run_tests', 'false');
+              core.setOutput('pgxntool_test_owner', '');
+              core.setOutput('pgxntool_test_ref', '');
+              return;
+            }
+
+            // master-to-master PRs have no paired test PR by convention.
+            // Run tests against pgxntool-test/master directly.
+            //
+            // If a fork PR's branch is named 'master', that's almost certainly
+            // a mistake (contributors should use a feature branch), but we
+            // don't block it — just warn visibly as an annotation on the run.
+            // Note: pull_request gives a read-only token for fork PRs, so we
+            // can't post a PR comment back to the upstream repo from here.
+            // Gate on the BASE branch too: this shortcut is only for
+            // master-to-master PRs. A PR from master into some other base must
+            // still go through the normal paired-test lookup below.
+            if (branch === 'master' && context.payload.pull_request.base.ref === 'master') {
+              const headRepo = context.payload.pull_request.head.repo;
+              const isBaseRepo =
+                headRepo?.owner?.login === context.repo.owner &&
+                headRepo?.name === context.repo.repo;
+              if (!isBaseRepo) {
+                core.warning(
+                  `PR head branch is named 'master' but comes from a fork ` +
+                  `(${headRepo?.full_name ?? 'unknown'}). Contributors should ` +
+                  `use a feature branch, not master. Proceeding with tests ` +
+                  `against pgxntool-test/master.`
+                );
+              }
+              core.setOutput('run_tests', 'true');
+              core.setOutput('pgxntool_test_owner', 'Postgres-Extensions');
+              core.setOutput('pgxntool_test_ref', 'master');
+              return;
+            }
+
+            // The owner of this PR's head repo — the contributor's fork owner
+            // for fork PRs, or the base repo owner for maintainer PRs.
+            // The paired pgxntool-test PR must come from the SAME owner.
+            // We never cross-match PRs across different contributors' forks.
+            const prOwner = context.payload.pull_request.head.repo?.owner?.login;
+
+            // Look for open pgxntool-test PRs with the SAME branch name AND
+            // the same fork owner. Branch names must match exactly.
+            //
+            // The GitHub API's 'head' filter requires "owner:branch" format.
+            // We list all open PRs and filter locally — safe for repos with
+            // few open PRs, and avoids needing to know the fork repo name.
+            // paginate() fetches all pages automatically, so this is correct
+            // even if pgxntool-test ever exceeds 100 open PRs (the per_page cap).
+            const prs = await github.paginate(github.rest.pulls.list, {
+              owner: context.repo.owner,
+              repo: 'pgxntool-test',
+              state: 'open',
+              per_page: 100
+            });
+
+            const matching = prs.filter(pr =>
+              pr.head.ref === branch &&
+              pr.head.repo?.owner?.login === prOwner
+            );
+            if (matching.length > 1) {
+              // Can't tell which paired branch is the real one, but a real
+              // signal still matters more than none -- fall back to a test
+              // run against pgxntool-test/master while enforcement fails.
+              core.setOutput('run_tests', 'true');
+              core.setOutput('pgxntool_test_owner', 'Postgres-Extensions');
+              core.setOutput('pgxntool_test_ref', 'master');
+              core.setFailed(
+                `Multiple open pgxntool-test PRs from ${prOwner} match branch ` +
+                `'${branch}'. Cannot determine which one to use.\n\n` +
+                `Close all but one, then re-run this check.`
+              );
+              return;
+            }
+
+            const testPR = matching.length === 1 ? matching[0] : null;
+
+            if (testPR) {
+              // Error if the no-test label is also set — that's contradictory.
+              // Re-fetch the PR live (not from payload) in case the label was
+              // added after this workflow was triggered.
+              const { data: currentPR } = await github.rest.pulls.get({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: prNumber
+              });
+              if (currentPR.labels.some(l => l.name === NO_TEST_LABEL)) {
+                // Contradictory state, but a paired branch to test against is
+                // right there -- use it for a real signal while enforcement fails.
+                core.setOutput('run_tests', 'true');
+                core.setOutput('pgxntool_test_owner', testPR.head.repo.owner.login);
+                core.setOutput('pgxntool_test_ref', testPR.head.ref);
+                core.setFailed(
+                  `PR has the '${NO_TEST_LABEL}' label, but a paired ` +
+                  `pgxntool-test PR #${testPR.number} exists on branch '${branch}'.\n\n` +
+                  `Remove the '${NO_TEST_LABEL}' label — it should only be used ` +
+                  `when there is genuinely no paired test PR.`
+                );
+                return;
+              }
+
+              // A paired test PR exists. Verify its CI passed for the exact
+              // current HEAD SHA and that the run is recent enough to be valid.
+              const sha = testPR.head.sha;
+              const testPRUrl =
+                `https://github.com/${context.repo.owner}/pgxntool-test/pull/${testPR.number}`;
+              const recheckUrl =
+                `https://github.com/${context.repo.owner}/${context.repo.repo}/pull/${prNumber}/checks`;
+
+              core.info(`Found pgxntool-test PR #${testPR.number} (${sha.slice(0, 7)})`);
+
+              // Poll until all check runs for the exact HEAD SHA complete.
+              // Using 'ref: sha' (not branch name) ensures we only see runs for
+              // this commit — never stale runs from an older push on the same branch.
+              //
+              // We poll rather than fail immediately because both repos are often
+              // pushed close together. When that happens, pgxntool CI starts while
+              // pgxntool-test CI may not have queued yet. We wait up to 20 minutes.
+              const POLL_INTERVAL_MS = 30 * 1000;
+              const MAX_WAIT_MS = 20 * 60 * 1000;
+              const waitStart = Date.now();
+              let runs;
+
+              while (true) {
+                // per_page: 100 is intentional here — a single commit will
+                // not realistically have 100+ CI check runs, so pagination
+                // is unnecessary. (pulls.list uses paginate() above because
+                // an active repo could have many open PRs.)
+                const { data: checks } = await github.rest.checks.listForRef({
+                  owner: context.repo.owner,
+                  repo: 'pgxntool-test',
+                  ref: sha,
+                  per_page: 100
+                });
+                runs = checks.check_runs;
+
+                const incomplete = runs.filter(r => r.status !== 'completed');
+                if (runs.length > 0 && incomplete.length === 0) break;
+
+                const elapsed = Date.now() - waitStart;
+                if (elapsed >= MAX_WAIT_MS) {
+                  const mins = Math.round(elapsed / 60000);
+                  // Timed out waiting for the paired PR's own CI, but its
+                  // branch is known -- use it for a real signal while
+                  // enforcement fails, rather than leaving zero signal.
+                  core.setOutput('run_tests', 'true');
+                  core.setOutput('pgxntool_test_owner', testPR.head.repo.owner.login);
+                  core.setOutput('pgxntool_test_ref', testPR.head.ref);
+                  if (runs.length === 0) {
+                    core.setFailed(
+                      `pgxntool-test PR #${testPR.number} has no CI runs for ` +
+                      `SHA ${sha.slice(0, 7)} after waiting ${mins} min.\n\n` +
+                      `Push a commit (or manually re-run CI) on the test PR:\n` +
+                      `  Test PR:           ${testPRUrl}\n` +
+                      `  Re-run this check: ${recheckUrl}`
+                    );
+                  } else {
+                    const names = incomplete.map(r => r.name).join(', ');
+                    core.setFailed(
+                      `pgxntool-test PR #${testPR.number} CI did not finish within ` +
+                      `${mins} min for SHA ${sha.slice(0, 7)}: ${names}\n\n` +
+                      `  Test PR:           ${testPRUrl}\n` +
+                      `  Re-run this check: ${recheckUrl}`
+                    );
+                  }
+                  return;
+                }
+
+                if (runs.length === 0) {
+                  core.info(`No CI runs yet for pgxntool-test PR #${testPR.number} (${sha.slice(0, 7)}); waiting 30s...`);
+                } else {
+                  const names = incomplete.map(r => r.name).join(', ');
+                  core.info(`pgxntool-test CI still running (${names}); waiting 30s...`);
+                }
+                await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL_MS));
+              }
+
+              // All checks complete — look for failures.
+              // 'success', 'skipped', 'neutral' are non-blocking.
+              const failed = runs.filter(
+                r => !['success', 'skipped', 'neutral'].includes(r.conclusion)
+              );
+              if (failed.length > 0) {
+                const names = failed.map(r => `${r.name} (${r.conclusion})`).join(', ');
+                core.setFailed(
+                  `pgxntool-test PR #${testPR.number} CI failed for ` +
+                  `SHA ${sha.slice(0, 7)}: ${names}\n\n` +
+                  `Fix the test PR CI, then re-run this check:\n` +
+                  `  Test PR:           ${testPRUrl}\n` +
+                  `  Re-run this check: ${recheckUrl}`
+                );
+                return;
+              }
+
+              core.info(
+                `pgxntool-test PR #${testPR.number} CI passed for ` +
+                `SHA ${sha.slice(0, 7)} — tests run there, not here.`
+              );
+              core.setOutput('run_tests', 'false');
+              core.setOutput('pgxntool_test_owner', '');
+              core.setOutput('pgxntool_test_ref', '');
+              return;
+            }
+
+            // No paired test PR found. Check for the NO_TEST_LABEL label,
+            // which a maintainer can apply when a pgxntool change genuinely
+            // needs no test changes (unusual).
+            //
+            // We make a live API call rather than reading from the event
+            // payload. The payload is a snapshot from when this workflow was
+            // triggered — a maintainer may have added the label after that.
+            const { data: pr } = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: prNumber
+            });
+
+            if (pr.labels.some(l => l.name === NO_TEST_LABEL)) {
+              core.info(
+                `'${NO_TEST_LABEL}' label is present; running tests ` +
+                "against pgxntool-test/master. The protect-label workflow " +
+                "ensures only maintainers can apply this label."
+              );
+              core.setOutput('run_tests', 'true');
+              core.setOutput('test_ref', 'master');
+              return;
+            }
+
+            // Neither a paired test PR nor the override label was found.
+            // Give the maintainer a real test signal to decide whether to
+            // override this failure, by running against pgxntool-test/master
+            // before failing below.
+            core.setOutput('run_tests', 'true');
+            core.setOutput('pgxntool_test_owner', 'Postgres-Extensions');
+            core.setOutput('pgxntool_test_ref', 'master');
+            // Fail with a clear, actionable message.
+            core.setFailed(
+              `No paired pgxntool-test PR found for branch '${branch}', ` +
+              `and no '${NO_TEST_LABEL}' label on this PR.\n\n` +
+              `pgxntool changes should always be paired with matching test\n` +
+              `changes in pgxntool-test. This check enforces that pairing.\n\n` +
+              `To resolve:\n` +
+              `  1. Open a PR in pgxntool-test from the SAME account (${prOwner}),\n` +
+              `     on a branch ALSO named '${branch}'. Both the branch name and\n` +
+              `     the head owner must match exactly for the pairing to work.\n\n` +
+              `  2. If this pgxntool change truly needs no test updates (unusual),\n` +
+              `     ask a maintainer to apply the '${NO_TEST_LABEL}' label.\n` +
+              `     Only maintainers can apply this label. It is not a normal\n` +
+              `     shortcut — most pgxntool changes require test updates.\n\n` +
+              `See: https://github.com/Postgres-Extensions/pgxntool-test#ci-and-contributing`
+            );
+
+  test:
+    needs: check-test-pr
+    # Runs even when check-test-pr fails (its run-tests output can still be
+    # true); !cancelled() skips only on a real cancellation, unlike always().
+    if: ${{ !cancelled() && needs.check-test-pr.outputs.run-tests == 'true' }}
+    # -----------------------------------------------------------------------
+    # CROSS-REPO REUSABLE WORKFLOW — READ BEFORE CHANGING THIS REF
+    # See: .github/workflows/CLAUDE.md for full architecture notes.
+    #
+    # The ref must be a static string — GitHub Actions does not support
+    # expressions in uses:. It points at pgxntool-test's run-tests.yml on
+    # master. (During feature-branch development this is temporarily set to
+    # @<branch> so CI can find run-tests.yml before it lands on master, and
+    # flipped back to @master once pgxntool-test/<branch> has merged.)
+    # -----------------------------------------------------------------------
+    uses: Postgres-Extensions/pgxntool-test/.github/workflows/run-tests.yml@master
+    with:
+      # pgxntool: this PR's own branch, on its own account (a fork for fork PRs).
+      pgxntool-owner: ${{ github.event.pull_request.head.repo.owner.login }}
+      pgxntool-branch: ${{ github.event.pull_request.head.ref }}
+
+      # pgxntool-test: whichever owner/ref check-test-pr decided gives a real
+      # signal for this path (the paired PR's own branch when one exists and
+      # is usable, canonical master otherwise -- see check-test-pr's script).
+      pgxntool-test-owner: ${{ needs.check-test-pr.outputs.pgxntool-test-owner }}
+      pgxntool-test-ref: ${{ needs.check-test-pr.outputs.pgxntool-test-ref }}
