@@ -84,7 +84,7 @@ jobs:
           NEWEST=18
           CURRENT_FLOOR=12
 
-          supported=$(seq "$NEWEST" -1 "$CURRENT_FLOOR")
+          supported="18 17 16 15 14 13 12 11 10 9.6 9.5"
 
           # Emit a JSON array for the test job's matrix to consume via
           # fromJSON.
