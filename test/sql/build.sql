@@ -6,6 +6,8 @@
 -- Both blocks drop test/install/load.sql's committed install first; ROLLBACK restores it
 BEGIN;
 DROP EXTENSION trunklet;
+-- \i skips CREATE EXTENSION's script-scoped suppression of the script's NOTICEs
+SET LOCAL client_min_messages = warning;
 \i sql/trunklet.sql
 ROLLBACK;
 

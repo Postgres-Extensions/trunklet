@@ -9,6 +9,11 @@
  */
 \set ON_ERROR_STOP on
 
+-- Saved to assert that installing leaves the caller's settings as it found them
+SELECT set_config('trunklet.test_before_search_path', current_setting('search_path'), false)
+  , set_config('trunklet.test_before_client_min_messages', current_setting('client_min_messages'), false)
+;
+
 -- Branches server-side rather than with psql's \if, which needs psql 10+
 DO $body$
 DECLARE
@@ -38,6 +43,22 @@ SELECT CASE current_setting('trunklet.test_load_mode')
   END AS update_script
 \gset
 \i :update_script
+
+DO $body$
+BEGIN
+  -- Update mode asserts this around ALTER EXTENSION UPDATE in its helper, after changing search_path
+  IF current_setting('trunklet.test_load_mode') = 'fresh' THEN
+    IF current_setting('search_path') IS DISTINCT FROM current_setting('trunklet.test_before_search_path') THEN
+      RAISE EXCEPTION 'CREATE EXTENSION changed search_path from % to %'
+        , current_setting('trunklet.test_before_search_path'), current_setting('search_path');
+    END IF;
+    IF current_setting('client_min_messages') IS DISTINCT FROM current_setting('trunklet.test_before_client_min_messages') THEN
+      RAISE EXCEPTION 'CREATE EXTENSION changed client_min_messages from % to %'
+        , current_setting('trunklet.test_before_client_min_messages'), current_setting('client_min_messages');
+    END IF;
+  END IF;
+END
+$body$;
 
 DO $body$
 DECLARE

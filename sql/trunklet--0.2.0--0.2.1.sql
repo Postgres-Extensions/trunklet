@@ -1,17 +1,3 @@
-/*
- * Using temp objects will result in the extension being dropped after session
- * end. Create a real schema and then explicitly drop it instead.
- */
-CREATE SCHEMA __trunklet;
-
-CREATE TABLE __trunklet.old_settings AS
-  SELECT name, setting
-    FROM pg_catalog.pg_settings
-    WHERE name IN ('client_min_messages', 'search_path')
-;
-SET client_min_messages = warning;
-SET search_path = pg_catalog;
-
 CREATE OR REPLACE FUNCTION _trunklet.template__get(
   template_id _trunklet.template.template_id%TYPE
   , loose boolean DEFAULT false
@@ -258,21 +244,4 @@ CREATE OR REPLACE FUNCTION trunklet.execute_text(
 ) RETURNS anyelement LANGUAGE SQL AS $body$
 SELECT trunklet.execute_text( template_name, 1, parameters )
 $body$;
-
-
-
-
-
-SELECT _trunklet.exec(
-    format(
-      'SET %I = %L'
-      , name
-      , setting
-    )
-  )
-  FROM __trunklet.old_settings
-;
-DROP TABLE __trunklet.old_settings;
-DROP SCHEMA __trunklet;
-
 -- vi: expandtab sw=2 ts=2

@@ -11,13 +11,32 @@ SET search_path = _trunklet_test;
 -- Committed before the update, as stored data would be in production
 CREATE TABLE seeded_template_ids AS SELECT get_test_templates() AS ids;
 
+-- An update script must leave the caller's settings as it found them. Reset
+-- client_min_messages first: TEST_UPDATE_FROM's own install script may have left
+-- it raised, which would hide an update script doing the same.
+SET client_min_messages = notice;
+SELECT set_config('trunklet.test_before_search_path', current_setting('search_path'), false)
+  , set_config('trunklet.test_before_client_min_messages', current_setting('client_min_messages'), false)
+;
+
 ALTER EXTENSION trunklet UPDATE;
 
--- Updating from before 0.3.0 changes search_path, so qualify from here on
+DO $body$
+BEGIN
+  IF current_setting('search_path') IS DISTINCT FROM current_setting('trunklet.test_before_search_path') THEN
+    RAISE EXCEPTION 'ALTER EXTENSION UPDATE changed search_path from % to %'
+      , current_setting('trunklet.test_before_search_path'), current_setting('search_path');
+  END IF;
+  IF current_setting('client_min_messages') IS DISTINCT FROM current_setting('trunklet.test_before_client_min_messages') THEN
+    RAISE EXCEPTION 'ALTER EXTENSION UPDATE changed client_min_messages from % to %'
+      , current_setting('trunklet.test_before_client_min_messages'), current_setting('client_min_messages');
+  END IF;
+END
+$body$;
 
 DO $body$
 DECLARE
-  c_ids CONSTANT int[] := (SELECT ids FROM _trunklet_test.seeded_template_ids);
+  c_ids CONSTANT int[] := (SELECT ids FROM seeded_template_ids);
   c_parameters CONSTANT text[] := '{}';
   r record;
 BEGIN
@@ -43,7 +62,7 @@ END
 $body$;
 
 -- The language's functions were created by TEST_UPDATE_FROM's code
-SELECT trunklet.template_language__remove(_trunklet_test.get_test_language_name(), cascade => true);
+SELECT trunklet.template_language__remove(get_test_language_name(), cascade => true);
 
 DO $body$
 DECLARE
