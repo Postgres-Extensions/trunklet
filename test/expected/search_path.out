@@ -1,5 +1,6 @@
 \set ECHO none
-1..1
+1..2
 tap, public
 ok 1 - verify search_path has not changed
+ok 2 - verify client_min_messages has not changed
 # TRANSACTION INTENTIONALLY LEFT OPEN!
