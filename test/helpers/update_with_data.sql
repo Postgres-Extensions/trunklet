@@ -19,22 +19,28 @@ CREATE TABLE seeded_template_ids AS SELECT get_test_templates() AS ids;
  * it raised, which would hide an update script doing the same.
  */
 SET client_min_messages = notice;
-SELECT set_config('trunklet.test_before_search_path', current_setting('search_path'), false)
-  , set_config('trunklet.test_before_client_min_messages', current_setting('client_min_messages'), false)
-;
+DO $body$
+DECLARE
+  s text;
+BEGIN
+  FOREACH s IN ARRAY ARRAY['search_path', 'client_min_messages'] LOOP
+    PERFORM set_config('trunklet.test_before_' || s, current_setting(s), false);
+  END LOOP;
+END
+$body$;
 
 ALTER EXTENSION trunklet UPDATE;
 
 DO $body$
+DECLARE
+  s text;
 BEGIN
-  IF current_setting('search_path') IS DISTINCT FROM current_setting('trunklet.test_before_search_path') THEN
-    RAISE EXCEPTION 'ALTER EXTENSION UPDATE changed search_path from % to %'
-      , current_setting('trunklet.test_before_search_path'), current_setting('search_path');
-  END IF;
-  IF current_setting('client_min_messages') IS DISTINCT FROM current_setting('trunklet.test_before_client_min_messages') THEN
-    RAISE EXCEPTION 'ALTER EXTENSION UPDATE changed client_min_messages from % to %'
-      , current_setting('trunklet.test_before_client_min_messages'), current_setting('client_min_messages');
-  END IF;
+  FOREACH s IN ARRAY ARRAY['search_path', 'client_min_messages'] LOOP
+    IF current_setting(s) IS DISTINCT FROM current_setting('trunklet.test_before_' || s) THEN
+      RAISE EXCEPTION 'ALTER EXTENSION UPDATE changed % from % to %'
+        , s, current_setting('trunklet.test_before_' || s), current_setting(s);
+    END IF;
+  END LOOP;
 END
 $body$;
 
