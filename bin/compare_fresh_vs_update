@@ -1,0 +1,117 @@
+#!/usr/bin/env bash
+#
+# USAGE: bin/compare_fresh_vs_update FROM_VERSION
+#
+# Fails, printing a diff, if any trunklet extension member differs between a
+# fresh install and one created at FROM_VERSION then ALTER EXTENSION UPDATEd.
+# The test suite only proves the behavior it asserts; this catches an update
+# script that leaves a member defined differently from a fresh install.
+#
+# Members come from pg_depend, so new objects are covered without editing this.
+# Each one is rendered as its identity, its definition (functions, views, and
+# table columns and constraints), its comments and its object-level ACL.
+# Not compared: sequence settings (identity, comments and ACL only; the query
+# must run on 9.5-18, where sequence metadata lives in different places) and
+# column-level ACLs (pg_attribute.attacl; trunklet grants none). Both installs run
+# in scratch databases on the server the usual PG* environment points at, and
+# are dropped on exit.
+set -euo pipefail
+
+from_version=${1:?usage: $0 FROM_VERSION}
+
+suffix="$$_$RANDOM"
+fresh_db="trunklet_compare_fresh_$suffix"
+update_db="trunklet_compare_update_$suffix"
+tmp=$(mktemp -d)
+
+cleanup() {
+  dropdb --if-exists "$fresh_db"
+  dropdb --if-exists "$update_db"
+  rm -rf "$tmp"
+}
+trap cleanup EXIT
+
+run_psql() {
+  local db=$1
+  shift
+  psql -X -q -v ON_ERROR_STOP=1 -d "$db" "$@"
+}
+
+snapshot() {
+  run_psql "$1" -tA <<'SQL'
+SELECT 'extension trunklet version ' || extversion FROM pg_extension WHERE extname = 'trunklet';
+
+WITH member AS (
+  SELECT d.classid, d.objid, pg_describe_object(d.classid, d.objid, 0) AS identity
+    FROM pg_depend d
+    WHERE d.refclassid = 'pg_extension'::regclass
+      AND d.refobjid = (SELECT oid FROM pg_extension WHERE extname = 'trunklet')
+      AND d.deptype = 'e'
+)
+SELECT concat_ws(E'\n'
+    , '== ' || m.identity
+    , CASE WHEN m.classid = 'pg_proc'::regclass THEN pg_get_functiondef(m.objid) END
+    , (SELECT pg_get_viewdef(c.oid) FROM pg_class c WHERE m.classid = 'pg_class'::regclass AND c.oid = m.objid AND c.relkind = 'v')
+    , (SELECT string_agg(
+            format('column %I %s%s%s'
+              , a.attname
+              , format_type(a.atttypid, a.atttypmod)
+              , CASE WHEN a.attnotnull THEN ' NOT NULL' END
+              , ' DEFAULT ' || pg_get_expr(ad.adbin, ad.adrelid)
+            )
+            , E'\n' ORDER BY a.attnum
+          )
+        FROM pg_class c
+          JOIN pg_attribute a ON a.attrelid = c.oid AND a.attnum > 0 AND NOT a.attisdropped
+          LEFT JOIN pg_attrdef ad ON ad.adrelid = a.attrelid AND ad.adnum = a.attnum
+        WHERE m.classid = 'pg_class'::regclass AND c.oid = m.objid AND c.relkind = 'r'
+      )
+    , (SELECT string_agg(format('constraint %I %s', conname, pg_get_constraintdef(oid)), E'\n' ORDER BY conname)
+        FROM pg_constraint
+        WHERE m.classid = 'pg_class'::regclass AND conrelid = m.objid
+      )
+    , (SELECT string_agg(
+            format('comment on %s: %s', pg_describe_object(classoid, objoid, objsubid), description)
+            , E'\n' ORDER BY objsubid
+          )
+        FROM pg_description
+        WHERE classoid = m.classid AND objoid = m.objid
+      )
+    , 'acl: ' || coalesce(
+        CASE
+          WHEN m.classid = 'pg_proc'::regclass THEN (SELECT proacl FROM pg_proc WHERE oid = m.objid)
+          WHEN m.classid = 'pg_class'::regclass THEN (SELECT relacl FROM pg_class WHERE oid = m.objid)
+          WHEN m.classid = 'pg_namespace'::regclass THEN (SELECT nspacl FROM pg_namespace WHERE oid = m.objid)
+          WHEN m.classid = 'pg_type'::regclass THEN (SELECT typacl FROM pg_type WHERE oid = m.objid)
+        END::text
+        , '(default)'
+      )
+  )
+  FROM member m
+  ORDER BY m.identity
+;
+SQL
+}
+
+createdb "$fresh_db"
+run_psql "$fresh_db" <<'SQL'
+SET client_min_messages = warning;
+CREATE EXTENSION trunklet;
+SQL
+
+createdb "$update_db"
+run_psql "$update_db" -v from_version="$from_version" <<'SQL'
+SET client_min_messages = warning;
+CREATE EXTENSION trunklet VERSION :'from_version';
+ALTER EXTENSION trunklet UPDATE;
+SQL
+
+snapshot "$fresh_db" > "$tmp/fresh"
+snapshot "$update_db" > "$tmp/update"
+
+if diff -u --label "fresh install" --label "updated from $from_version" "$tmp/fresh" "$tmp/update"; then
+  echo "OK: an install updated from $from_version matches a fresh install"
+else
+  echo "FAIL: an install updated from $from_version differs from a fresh install (diff above)" >&2
+  exit 1
+fi

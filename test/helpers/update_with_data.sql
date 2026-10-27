@@ -1,0 +1,74 @@
+/*
+ * Update mode's ALTER EXTENSION UPDATE, run by test/install/load.sql with a
+ * test language and templates stored under TEST_UPDATE_FROM first. After the
+ * update it checks they still process, removes them, and leaves nothing behind,
+ * so the suite's expected output is the same as in fresh mode.
+ */
+CREATE SCHEMA _trunklet_test;
+SET search_path = _trunklet_test;
+\i test/helpers/language_factory.sql
+
+-- Committed before the update, as stored data would be in production
+CREATE TABLE seeded_template_ids AS SELECT get_test_templates() AS ids;
+
+ALTER EXTENSION trunklet UPDATE;
+
+-- Updating from before 0.3.0 changes search_path, so qualify from here on
+
+DO $body$
+DECLARE
+  c_ids CONSTANT int[] := (SELECT ids FROM _trunklet_test.seeded_template_ids);
+  c_parameters CONSTANT text[] := '{}';
+  r record;
+BEGIN
+  -- get_test_templates() stores 'test <version>' as versions 1 and 2 of 'test template'
+  FOR r IN
+    SELECT format('process(%L, %s, ...)', 'test template', template_version) AS call
+        , trunklet.process('test template'::text, template_version, c_parameters) AS actual
+        , 'test ' || template_version AS expected
+      FROM generate_series(1, 2) template_version
+    UNION ALL
+    SELECT format('process(template_id %s, ...)', c_ids[template_version])
+        , trunklet.process(c_ids[template_version], c_parameters)
+        , 'test ' || template_version
+      FROM generate_series(1, 2) template_version
+  LOOP
+    IF r.actual IS DISTINCT FROM r.expected THEN
+      RAISE EXCEPTION 'trunklet.% returned %, expected %'
+        , r.call, quote_nullable(r.actual), quote_literal(r.expected)
+      ;
+    END IF;
+  END LOOP;
+END
+$body$;
+
+-- The language's functions were created by TEST_UPDATE_FROM's code
+SELECT trunklet.template_language__remove(_trunklet_test.get_test_language_name(), cascade => true);
+
+DO $body$
+DECLARE
+  c_functions CONSTANT text := (
+    SELECT string_agg(oid::regprocedure::text, ', ')
+      FROM pg_proc
+      WHERE pronamespace = '_trunklet_functions'::regnamespace
+  );
+BEGIN
+  IF c_functions IS NOT NULL THEN
+    RAISE EXCEPTION 'template_language__remove() left functions in schema _trunklet_functions'
+      USING DETAIL = c_functions
+    ;
+  END IF;
+  IF EXISTS(SELECT 1 FROM _trunklet.language) OR EXISTS(SELECT 1 FROM _trunklet.template) THEN
+    RAISE EXCEPTION 'template_language__remove() left rows in _trunklet.language or _trunklet.template';
+  END IF;
+END
+$body$;
+
+-- Back to the never-used state of a fresh install
+SELECT setval(pg_get_serial_sequence('_trunklet.language', 'language_id'), 1, false)
+  , setval(pg_get_serial_sequence('_trunklet.template', 'template_id'), 1, false)
+;
+DROP SCHEMA _trunklet_test CASCADE;
+RESET search_path;
+
+-- vi: expandtab ts=2 sw=2

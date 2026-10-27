@@ -3,11 +3,14 @@
 
 \i test/helpers/psql.sql
 
+-- Both blocks drop test/install/load.sql's committed install first; ROLLBACK restores it
 BEGIN;
+DROP EXTENSION trunklet;
 \i sql/trunklet.sql
 ROLLBACK;
 
 BEGIN;
+DROP EXTENSION trunklet;
 \i test/helpers/tap_setup.sql
 
 SELECT plan(4);

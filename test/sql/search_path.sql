@@ -7,6 +7,9 @@ SELECT plan(
     +1 -- verify search_path
 );
 
+-- Drop test/install/load.sql's committed install; this test's rollback restores it
+DROP EXTENSION trunklet;
+
 CREATE TEMP TABLE before AS
   SELECT current_setting('search_path')
 ;

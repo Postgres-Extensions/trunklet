@@ -119,6 +119,14 @@ jobs:
         # to yes, PGXNTOOL_VERIFY_RESULTS_MODE to pgtap) and exits non-zero on
         # failure.
         run: make verify-results
+      - name: Test the update path on PostgreSQL ${{ matrix.pg }}
+        # Same suite and expected output, but test/install/load.sql installs
+        # the Makefile's TEST_UPDATE_FROM version and runs ALTER EXTENSION
+        # UPDATE.
+        run: make verify-results TEST_LOAD_SOURCE=update
+      - name: Compare fresh vs updated install on PostgreSQL ${{ matrix.pg }}
+        # Diffs every extension member against a fresh install.
+        run: make compare-fresh-vs-update
 
   # A single stable check name for use as a required status check in branch
   # protection rules. Matrix jobs produce check names like "🐘 PostgreSQL 14"
