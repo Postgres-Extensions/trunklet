@@ -4,8 +4,6 @@
 \i test/helpers/psql.sql
 
 BEGIN;
--- CREATE EXTENSION raises client_min_messages to warning during the script; \i doesn't, so set it here.
-SET LOCAL client_min_messages = warning;
 \i sql/trunklet.sql
 ROLLBACK;
 

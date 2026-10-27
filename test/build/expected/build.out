@@ -1,4 +1,9 @@
 \set ECHO none
+ exec 
+------
+ 
+(1 row)
+
 1..4
 ok 1 - CREATE EXTENSION trunklet;
 ok 2 - Verify search_path is back to something sane after extension creation.

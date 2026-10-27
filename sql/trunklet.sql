@@ -4,6 +4,20 @@
  *
  */
 
+/*
+ * Using temp objects will result in the extension being dropped after session
+ * end. Create a real schema and then explicitly drop it instead.
+ */
+CREATE SCHEMA __trunklet;
+
+CREATE TABLE __trunklet.old_settings AS
+  SELECT name, setting
+    FROM pg_catalog.pg_settings
+    WHERE name IN ('client_min_messages')-- This doesn't actually work as expected :( , 'search_path')
+;
+SET LOCAL client_min_messages = warning;
+-- PG apparently truncates the path to a single element, so our reset doesn't work :( SET LOCAL search_path = pg_catalog;
+
 DO $do$
 BEGIN
   CREATE ROLE trunklet__dependency;
@@ -942,4 +956,18 @@ BEGIN
 END
 $body$;
 */
+
+
+SELECT _trunklet.exec(
+    format(
+      'SET LOCAL %I = %L'
+      , name
+      , setting
+    )
+  )
+  FROM __trunklet.old_settings
+;
+DROP TABLE __trunklet.old_settings;
+DROP SCHEMA __trunklet;
+
 -- vi: expandtab sw=2 ts=2
