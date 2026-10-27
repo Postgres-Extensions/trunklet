@@ -113,12 +113,22 @@ jobs:
         run: pg-start ${{ matrix.pg }}
       - name: Check out the repo
         uses: actions/checkout@v4
+      # pgxntool's test-build (test/build/build.sql) syncs test/build/*.sql via
+      # rsync (pgxntool/run-test-build.sh); the pgxn/pgxn-tools image lacks it.
+      - name: Install rsync
+        run: apt-get install -y rsync
       - name: Test on PostgreSQL ${{ matrix.pg }}
         # verify-results runs the same TEST_DEPS chain as `make test`, then
         # inspects the pgTAP results (PGXNTOOL_ENABLE_VERIFY_RESULTS defaults
         # to yes, PGXNTOOL_VERIFY_RESULTS_MODE to pgtap) and exits non-zero on
         # failure.
         run: make verify-results
+      - name: Test the update path on PostgreSQL ${{ matrix.pg }}
+        # Update-path suite (test/install/load.sql installs TEST_UPDATE_FROM,
+        # then runs ALTER EXTENSION UPDATE) plus the fresh-vs-update comparison.
+        # Plain `test` suffices: the fresh verify-results step above already
+        # checks the same expected output.
+        run: make test-update
 
   # A single stable check name for use as a required status check in branch
   # protection rules. Matrix jobs produce check names like "🐘 PostgreSQL 14"
