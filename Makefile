@@ -30,13 +30,10 @@ endif
 TEST_UPDATE_FROM ?= 0.2.0
 export PGOPTIONS := $(PGOPTIONS) -c trunklet.test_load_mode=$(TEST_LOAD_SOURCE) -c trunklet.test_update_from=$(TEST_UPDATE_FROM)
 
-# Recurses so the PGOPTIONS export above is re-evaluated with update set.
+# Runs the suite against an updated install, then diffs it against a fresh one
+# (bin/compare_fresh_vs_update). Recurses so the PGOPTIONS export above is
+# re-evaluated with update set.
 .PHONY: test-update
 test-update:
 	$(MAKE) test TEST_LOAD_SOURCE=update
-
-# Diffs every extension member's definition, comments and ACLs between a fresh
-# install and one updated from TEST_UPDATE_FROM; see bin/compare_fresh_vs_update.
-.PHONY: compare-fresh-vs-update
-compare-fresh-vs-update: $(if $(filter yes,$(PGXNTOOL_ENABLE_FS_INSTALL)),install)
 	bin/compare_fresh_vs_update $(TEST_UPDATE_FROM)

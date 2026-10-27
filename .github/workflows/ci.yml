@@ -124,13 +124,11 @@ jobs:
         # failure.
         run: make verify-results
       - name: Test the update path on PostgreSQL ${{ matrix.pg }}
-        # Same suite and expected output, but test/install/load.sql installs
-        # the Makefile's TEST_UPDATE_FROM version and test/helpers/update_with_data.sql
-        # runs ALTER EXTENSION UPDATE.
-        run: make verify-results TEST_LOAD_SOURCE=update
-      - name: Compare fresh vs updated install on PostgreSQL ${{ matrix.pg }}
-        # Diffs every extension member against a fresh install.
-        run: make compare-fresh-vs-update
+        # Update-path suite (test/install/load.sql installs TEST_UPDATE_FROM,
+        # then runs ALTER EXTENSION UPDATE) plus the fresh-vs-update comparison.
+        # Plain `test` suffices: the fresh verify-results step above already
+        # checks the same expected output.
+        run: make test-update
 
   # A single stable check name for use as a required status check in branch
   # protection rules. Matrix jobs produce check names like "🐘 PostgreSQL 14"
