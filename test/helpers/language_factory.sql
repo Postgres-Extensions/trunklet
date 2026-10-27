@@ -1,9 +1,10 @@
 /*
- * LANGUAGE FACTORY: creates the test languages and templates, in the first
- * schema on search_path.
+ * LANGUAGE FACTORY: defines, in the first schema on search_path, functions that
+ * create the test languages and templates on demand.
  *
  * test/helpers/update_with_data.sql also runs this under TEST_UPDATE_FROM, so
- * stick to the 0.2.0 API and don't use pgTAP.
+ * stick to the API of the oldest version TEST_UPDATE_FROM may be set to, and
+ * don't use pgTAP.
  */
 CREATE FUNCTION bogus_language_name(
 ) RETURNS text LANGUAGE sql AS $$SELECT 'bogus template language that does not exist'::text$$;

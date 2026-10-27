@@ -11,10 +11,10 @@
 # Each one is rendered as its identity, its definition (functions, views, and
 # table columns and constraints), its comments and its object-level ACL.
 # Not compared: sequence settings (identity, comments and ACL only; the query
-# must run on 9.5-18, where sequence metadata lives in different places) and
-# column-level ACLs (pg_attribute.attacl; trunklet grants none). Both installs run
-# in scratch databases on the server the usual PG* environment points at, and
-# are dropped on exit.
+# must run on every supported version, where sequence metadata lives in
+# different places) and column-level ACLs (pg_attribute.attacl; trunklet grants
+# none). Both installs run in scratch databases on the server the usual PG*
+# environment points at, and are dropped on exit.
 set -euo pipefail
 
 from_version=${1:?usage: $0 FROM_VERSION}

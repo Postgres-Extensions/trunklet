@@ -113,6 +113,10 @@ jobs:
         run: pg-start ${{ matrix.pg }}
       - name: Check out the repo
         uses: actions/checkout@v4
+      # pgxntool's test-build (test/build/build.sql) syncs test/build/*.sql via
+      # rsync (pgxntool/run-test-build.sh); the pgxn/pgxn-tools image lacks it.
+      - name: Install rsync
+        run: apt-get install -y rsync
       - name: Test on PostgreSQL ${{ matrix.pg }}
         # verify-results runs the same TEST_DEPS chain as `make test`, then
         # inspects the pgTAP results (PGXNTOOL_ENABLE_VERIFY_RESULTS defaults
@@ -121,8 +125,8 @@ jobs:
         run: make verify-results
       - name: Test the update path on PostgreSQL ${{ matrix.pg }}
         # Same suite and expected output, but test/install/load.sql installs
-        # the Makefile's TEST_UPDATE_FROM version and runs ALTER EXTENSION
-        # UPDATE.
+        # the Makefile's TEST_UPDATE_FROM version and test/helpers/update_with_data.sql
+        # runs ALTER EXTENSION UPDATE.
         run: make verify-results TEST_LOAD_SOURCE=update
       - name: Compare fresh vs updated install on PostgreSQL ${{ matrix.pg }}
         # Diffs every extension member against a fresh install.

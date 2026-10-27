@@ -38,5 +38,5 @@ test-update:
 # Diffs every extension member's definition, comments and ACLs between a fresh
 # install and one updated from TEST_UPDATE_FROM; see bin/compare_fresh_vs_update.
 .PHONY: compare-fresh-vs-update
-compare-fresh-vs-update: install
+compare-fresh-vs-update: $(if $(filter yes,$(PGXNTOOL_ENABLE_FS_INSTALL)),install)
 	bin/compare_fresh_vs_update $(TEST_UPDATE_FROM)
