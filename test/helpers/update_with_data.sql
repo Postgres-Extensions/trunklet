@@ -1,8 +1,10 @@
 /*
- * Update mode's ALTER EXTENSION UPDATE, run by test/install/load.sql. Stores a
- * test language and templates under TEST_UPDATE_FROM, updates, checks the
- * version and that the templates still process, then removes them and leaves
- * nothing behind, so the suite's expected output matches fresh mode.
+ * Seeds a test language and a test template under TEST_UPDATE_FROM, runs ALTER
+ * EXTENSION UPDATE, and checks the version and that the template still
+ * processes. It then removes the language and checks that nothing is left
+ * behind, so the suite's expected output matches fresh mode.
+ *
+ * test/install/load.sql runs it in update mode.
  */
 CREATE SCHEMA _trunklet_test;
 SET search_path = _trunklet_test;
@@ -82,8 +84,15 @@ $body$;
 
 DO $body$
 BEGIN
-  IF NOT EXISTS(SELECT 1 FROM pg_proc WHERE pronamespace = '_trunklet_functions'::regnamespace) THEN
-    RAISE EXCEPTION 'no functions in schema _trunklet_functions before template_language__remove()';
+  -- Keeps the emptiness check below from passing vacuously; the comment text is the same in every version
+  IF (SELECT count(DISTINCT split_part(obj_description(oid, 'pg_proc'), ' ', 1))
+        FROM pg_proc
+        WHERE pronamespace = '_trunklet_functions'::regnamespace
+          AND obj_description(oid, 'pg_proc') LIKE '% function for trunklet language %'
+          AND split_part(obj_description(oid, 'pg_proc'), ' ', 1) IN ('process', 'extract_parameters')
+     ) <> 2
+  THEN
+    RAISE EXCEPTION 'test language lacks its process or extract_parameters function in _trunklet_functions before template_language__remove()';
   END IF;
 END
 $body$;

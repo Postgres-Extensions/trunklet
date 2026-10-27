@@ -5,7 +5,8 @@
  * Makefile's TEST_LOAD_SOURCE / TEST_UPDATE_FROM via PGOPTIONS.
  *
  * This file's output is never compared against anything. Its \set ON_ERROR_STOP
- * makes psql exit non-zero on an error, which fails the run only on PG16+.
+ * makes psql exit non-zero on an error, which fails the run only on PG16+. On
+ * PG 9.5-15 a failure surfaces only through the downstream tests.
  */
 \set ON_ERROR_STOP on
 
@@ -28,7 +29,8 @@ BEGIN
 END
 $body$;
 
--- Update mode only: update_with_data.sql does the ALTER EXTENSION UPDATE.
+-- Update mode only: update_with_data.sql does the ALTER EXTENSION UPDATE. Branches
+-- server-side for the same reason as above.
 SELECT CASE current_setting('trunklet.test_load_mode')
     WHEN 'update' THEN 'test/helpers/update_with_data.sql'
     ELSE '/dev/null'
