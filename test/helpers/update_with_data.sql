@@ -1,8 +1,8 @@
 /*
- * Update mode's ALTER EXTENSION UPDATE, run by test/install/load.sql with a
- * test language and templates stored under TEST_UPDATE_FROM first. After the
- * update it checks they still process, removes them, and leaves nothing behind,
- * so the suite's expected output is the same as in fresh mode.
+ * Update mode's ALTER EXTENSION UPDATE, run by test/install/load.sql. Stores a
+ * test language and templates under TEST_UPDATE_FROM, updates, checks the
+ * version and that the templates still process, then removes them and leaves
+ * nothing behind, so the suite's expected output matches fresh mode.
  */
 CREATE SCHEMA _trunklet_test;
 SET search_path = _trunklet_test;
@@ -12,6 +12,21 @@ SET search_path = _trunklet_test;
 CREATE TABLE seeded_template_ids AS SELECT get_test_templates() AS ids;
 
 ALTER EXTENSION trunklet UPDATE;
+
+DO $body$
+DECLARE
+  v_installed text;
+  v_default text;
+BEGIN
+  SELECT extversion INTO v_installed FROM pg_extension WHERE extname = 'trunklet';
+  SELECT default_version INTO v_default FROM pg_available_extensions WHERE name = 'trunklet';
+  IF v_installed IS DISTINCT FROM v_default THEN
+    RAISE EXCEPTION 'trunklet is at version % after ALTER EXTENSION UPDATE, not default_version %'
+      , v_installed, v_default
+    ;
+  END IF;
+END
+$body$;
 
 -- Updating from before 0.3.0 changes search_path, so qualify from here on
 
@@ -39,6 +54,14 @@ BEGIN
       ;
     END IF;
   END LOOP;
+END
+$body$;
+
+DO $body$
+BEGIN
+  IF NOT EXISTS(SELECT 1 FROM pg_proc WHERE pronamespace = '_trunklet_functions'::regnamespace) THEN
+    RAISE EXCEPTION 'no functions in schema _trunklet_functions before template_language__remove()';
+  END IF;
 END
 $body$;
 
