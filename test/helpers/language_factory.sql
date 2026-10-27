@@ -3,7 +3,7 @@
  * create the test languages and templates on demand.
  *
  * test/helpers/update_with_data.sql also runs this under TEST_UPDATE_FROM, so
- * stick to the API of the oldest version TEST_UPDATE_FROM may be set to, and
+ * stick to the API of the oldest install script in sql/ (currently 0.2.0), and
  * don't use pgTAP.
  */
 CREATE FUNCTION bogus_language_name(
