@@ -59,8 +59,6 @@ BEGIN
 END
 $body$;
 
--- Updating from before 0.3.0 changes search_path, so qualify from here on
-
 DO $body$
 DECLARE
   c_ids CONSTANT int[] := (SELECT ids FROM seeded_template_ids);
