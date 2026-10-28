@@ -14,35 +14,29 @@ SET search_path = _trunklet_test;
 CREATE TABLE seeded_template_ids AS SELECT get_test_templates() AS ids;
 
 /*
- * An update script must leave the caller's settings as it found them. Reset
+ * An update script must leave every user-settable setting as it found it. Reset
  * client_min_messages first: TEST_UPDATE_FROM's own install script may have left
  * it raised, which would hide an update script doing the same.
  */
 SET client_min_messages = notice;
-DO $body$
-DECLARE
-  s text;
-BEGIN
-  FOREACH s IN ARRAY ARRAY['search_path', 'client_min_messages'] LOOP
-    PERFORM set_config('trunklet.test_before_' || s, current_setting(s), false);
-  END LOOP;
-END
-$body$;
+\i test/helpers/settings_snapshot.sql
 
 ALTER EXTENSION trunklet UPDATE;
 
 DO $body$
 DECLARE
-  s text;
+  c_changed CONSTANT text := (
+    SELECT string_agg(format('%s: %L -> %L', name, before, after), ', ' ORDER BY name)
+      FROM pg_temp.settings_changed
+  );
 BEGIN
-  FOREACH s IN ARRAY ARRAY['search_path', 'client_min_messages'] LOOP
-    IF current_setting(s) IS DISTINCT FROM current_setting('trunklet.test_before_' || s) THEN
-      RAISE EXCEPTION 'ALTER EXTENSION UPDATE changed % from % to %'
-        , s, current_setting('trunklet.test_before_' || s), current_setting(s);
-    END IF;
-  END LOOP;
+  IF c_changed IS NOT NULL THEN
+    RAISE EXCEPTION 'ALTER EXTENSION UPDATE changed settings: %', c_changed;
+  END IF;
 END
 $body$;
+DROP VIEW pg_temp.settings_changed;
+DROP TABLE pg_temp.settings_before;
 
 DO $body$
 DECLARE

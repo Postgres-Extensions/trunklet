@@ -1,6 +1,5 @@
 \set ECHO none
-1..2
+1..1
 tap, public
-ok 1 - verify search_path has not changed
-ok 2 - verify client_min_messages has not changed
+ok 1 - CREATE EXTENSION did not change any user-settable setting
 # TRANSACTION INTENTIONALLY LEFT OPEN!
