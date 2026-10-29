@@ -7,9 +7,8 @@ CREATE SCHEMA __trunklet;
 CREATE TABLE __trunklet.old_settings AS
   SELECT name, setting
     FROM pg_catalog.pg_settings
-    WHERE name IN ('client_min_messages', 'search_path')
+    WHERE name IN ('search_path')
 ;
-SET LOCAL client_min_messages = warning;
 SET LOCAL search_path = pg_catalog;
 
 CREATE OR REPLACE FUNCTION _trunklet.template__get(

@@ -4,6 +4,7 @@
 \i test/helpers/psql.sql
 
 BEGIN;
+SET LOCAL client_min_messages = warning;
 \i sql/trunklet.sql
 ROLLBACK;
 
