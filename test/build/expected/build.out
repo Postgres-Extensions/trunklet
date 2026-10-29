@@ -6,6 +6,6 @@
 
 1..4
 ok 1 - CREATE EXTENSION trunklet;
-ok 2 - Verify search_path is back to something sane after extension creation.
+ok 2 - CREATE EXTENSION changed no setting
 ok 3 - Schema __trunklet should not exist
 ok 4 - DROP EXTENSION trunklet;

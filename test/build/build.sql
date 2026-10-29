@@ -9,6 +9,8 @@ ROLLBACK;
 
 BEGIN;
 \i test/helpers/tap_setup.sql
+\i test/helpers/settings_snapshot.sql
+SELECT pg_temp.settings_snapshot() AS snapshot \gset
 
 SELECT plan(4);
 
@@ -17,10 +19,9 @@ SELECT lives_ok(
     , 'CREATE EXTENSION trunklet;'
 );
 
-SELECT isnt(
-    current_setting('search_path')
-    , 'pg_catalog'
-    , 'Verify search_path is back to something sane after extension creation.'
+SELECT lives_ok(
+    $$SELECT pg_temp.settings_check('CREATE EXTENSION')$$
+    , 'CREATE EXTENSION changed no setting'
 );
 SELECT hasnt_schema('__trunklet');
 
