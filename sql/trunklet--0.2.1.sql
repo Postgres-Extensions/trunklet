@@ -806,9 +806,9 @@ $body$;
 
 
 
+-- Released as plain SET, which leaks the setting to the caller
 SELECT _trunklet.exec(
     format(
-      -- Released as plain SET, which leaks the setting to the caller
       'SET LOCAL %I = %L'
       , name
       , setting

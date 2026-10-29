@@ -12,7 +12,7 @@
 
 \i test/helpers/settings_snapshot.sql
 
--- A value an install script would visibly change
+-- Below warning, so the server saves it and a plain SET in a script would show (error or higher is not exercised)
 SET client_min_messages = notice;
 SELECT pg_temp.settings_snapshot();
 

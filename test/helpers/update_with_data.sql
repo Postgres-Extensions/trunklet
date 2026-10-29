@@ -1,8 +1,9 @@
 /*
  * Seeds a test language and a test template under TEST_UPDATE_FROM, runs ALTER
- * EXTENSION UPDATE, and checks that it changed no setting, the version and that
- * the template still processes. It then removes the language and checks that
- * nothing is left behind, so the suite's expected output matches fresh mode.
+ * EXTENSION UPDATE, and checks that the update changed no setting, that the
+ * extension is at the expected version, and that the template still processes.
+ * It then removes the language and checks that nothing is left behind, so the
+ * suite's expected output matches fresh mode.
  *
  * test/install/load.sql runs it in update mode, after loading
  * test/helpers/settings_snapshot.sql.
