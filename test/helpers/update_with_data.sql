@@ -1,10 +1,11 @@
 /*
  * Seeds a test language and a test template under TEST_UPDATE_FROM, runs ALTER
- * EXTENSION UPDATE, and checks the version and that the template still
- * processes. It then removes the language and checks that nothing is left
- * behind, so the suite's expected output matches fresh mode.
+ * EXTENSION UPDATE, and checks that it changed no setting, the version and that
+ * the template still processes. It then removes the language and checks that
+ * nothing is left behind, so the suite's expected output matches fresh mode.
  *
- * test/install/load.sql runs it in update mode.
+ * test/install/load.sql runs it in update mode, after loading
+ * test/helpers/settings_snapshot.sql.
  */
 CREATE SCHEMA _trunklet_test;
 SET search_path = _trunklet_test;
@@ -13,30 +14,9 @@ SET search_path = _trunklet_test;
 -- Committed before the update, as stored data would be in production
 CREATE TABLE seeded_template_ids AS SELECT get_test_templates() AS ids;
 
-/*
- * An update script must leave every user-settable setting as it found it. Reset
- * client_min_messages first: TEST_UPDATE_FROM's own install script may have left
- * it raised, which would hide an update script doing the same.
- */
-SET client_min_messages = notice;
-\i test/helpers/settings_snapshot.sql
-
+SELECT pg_temp.settings_snapshot();
 ALTER EXTENSION trunklet UPDATE;
-
-DO $body$
-DECLARE
-  c_changed CONSTANT text := (
-    SELECT string_agg(format('%s: %L -> %L', name, before, after), ', ' ORDER BY name)
-      FROM pg_temp.settings_changed
-  );
-BEGIN
-  IF c_changed IS NOT NULL THEN
-    RAISE EXCEPTION 'ALTER EXTENSION UPDATE changed settings: %', c_changed;
-  END IF;
-END
-$body$;
-DROP VIEW pg_temp.settings_changed;
-DROP TABLE pg_temp.settings_before;
+SELECT pg_temp.settings_check('ALTER EXTENSION UPDATE');
 
 DO $body$
 DECLARE

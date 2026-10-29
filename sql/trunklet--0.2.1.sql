@@ -15,8 +15,9 @@ CREATE TABLE __trunklet.old_settings AS
     FROM pg_catalog.pg_settings
     WHERE name IN ('client_min_messages', 'search_path')
 ;
-SET client_min_messages = warning;
-SET search_path = pg_catalog;
+-- Released as plain SET, which leaks the setting to the caller
+SET LOCAL client_min_messages = warning;
+SET LOCAL search_path = pg_catalog;
 
 DO $do$
 BEGIN
@@ -807,7 +808,8 @@ $body$;
 
 SELECT _trunklet.exec(
     format(
-      'SET %I = %L'
+      -- Released as plain SET, which leaks the setting to the caller
+      'SET LOCAL %I = %L'
       , name
       , setting
     )

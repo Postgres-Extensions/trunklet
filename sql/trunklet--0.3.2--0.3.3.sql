@@ -9,6 +9,7 @@ CREATE TABLE __trunklet.old_settings AS
     FROM pg_catalog.pg_settings
     WHERE name IN ('client_min_messages')-- This doesn't actually work as expected :( , 'search_path')
 ;
+-- Released as plain SET, which leaks the setting to the caller
 SET LOCAL client_min_messages = warning;
 
 CREATE OR REPLACE FUNCTION _trunklet.language__get(
@@ -185,6 +186,7 @@ REVOKE ALL ON FUNCTION trunklet.template_language__remove(
 
 SELECT _trunklet.exec(
     format(
+      -- Released as plain SET, which leaks the setting to the caller
       'SET LOCAL %I = %L'
       , name
       , setting

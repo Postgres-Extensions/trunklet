@@ -16,7 +16,8 @@ CREATE TABLE __trunklet.old_settings AS
     FROM pg_catalog.pg_settings
     WHERE name IN ('client_min_messages')-- This doesn't actually work as expected :( , 'search_path')
 ;
-SET client_min_messages = warning;
+-- Released as plain SET, which leaks the setting to the caller
+SET LOCAL client_min_messages = warning;
 -- PG apparently truncates the path to a single element, so our reset doesn't work :( SET LOCAL search_path = pg_catalog;
 
 DO $do$
@@ -961,7 +962,8 @@ $body$;
 
 SELECT _trunklet.exec(
     format(
-      'SET %I = %L'
+      -- Released as plain SET, which leaks the setting to the caller
+      'SET LOCAL %I = %L'
       , name
       , setting
     )

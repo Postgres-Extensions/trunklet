@@ -4,10 +4,12 @@
  *
  */
 
-SET client_min_messages = warning;
+-- Released as plain SET, which leaks the setting to the caller
+SET LOCAL client_min_messages = warning;
 
 -- Set a safe search_path
-SET search_path = pg_catalog;
+-- Released as plain SET, which leaks the setting to the caller
+SET LOCAL search_path = pg_catalog;
 
 DO $do$
 BEGIN
