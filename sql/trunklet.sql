@@ -557,7 +557,7 @@ CREATE OR REPLACE FUNCTION trunklet.template__add(
 ) RETURNS _trunklet.template.template_id%TYPE
 
 -- !!!!!!!
-SECURITY DEFINER SET search_path=pg_catalog
+SECURITY DEFINER SET search_path = pg_catalog, pg_temp
 -- !!!!!!
 
 LANGUAGE sql AS $body$
@@ -588,7 +588,7 @@ CREATE OR REPLACE FUNCTION trunklet.template__remove(
 ) RETURNS void
 
 -- !!!!!!!
-SECURITY DEFINER SET search_path=pg_catalog
+SECURITY DEFINER SET search_path = pg_catalog, pg_temp
 -- !!!!!!
 
 LANGUAGE sql AS $body$
@@ -600,7 +600,7 @@ CREATE OR REPLACE FUNCTION trunklet.template__remove(
 ) RETURNS void
 
 -- !!!!!!!
-SECURITY DEFINER SET search_path=pg_catalog
+SECURITY DEFINER SET search_path = pg_catalog, pg_temp
 -- !!!!!!
 
 LANGUAGE sql AS $body$
@@ -679,7 +679,7 @@ CREATE OR REPLACE FUNCTION trunklet.process_language(
 ) RETURNS text LANGUAGE plpgsql
 
 -- !!!!!!!
-SECURITY DEFINER SET search_path = pg_catalog
+SECURITY DEFINER SET search_path = pg_catalog, pg_temp
 -- !!!!!!!
 
 AS $body$
@@ -720,7 +720,7 @@ CREATE OR REPLACE FUNCTION trunklet.process(
   , parameters anyelement
 ) RETURNS text LANGUAGE SQL
 -- !!!
-SECURITY DEFINER SET search_path = pg_catalog
+SECURITY DEFINER SET search_path = pg_catalog, pg_temp
 -- !!!
 AS $body$
 SELECT trunklet.process_language(
@@ -737,7 +737,7 @@ CREATE OR REPLACE FUNCTION trunklet.process(
   , parameters anyelement
 ) RETURNS text LANGUAGE SQL
 -- !!!
-SECURITY DEFINER SET search_path = pg_catalog
+SECURITY DEFINER SET search_path = pg_catalog, pg_temp
 -- !!!
 AS $body$
 SELECT trunklet.process_language(
@@ -902,7 +902,7 @@ CREATE OR REPLACE FUNCTION trunklet.extract_parameters(
 ) RETURNS anyelement LANGUAGE plpgsql
 
 -- !!!!!!!
-SECURITY DEFINER SET search_path = pg_catalog
+SECURITY DEFINER SET search_path = pg_catalog, pg_temp
 -- !!!!!!!
 
 AS $body$

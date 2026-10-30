@@ -19,3 +19,11 @@ EXCEPTION
     ;
 END
 $body$;
+
+ALTER FUNCTION trunklet.template__add(character varying, text, integer, text) SET search_path = pg_catalog, pg_temp;
+ALTER FUNCTION trunklet.template__remove(integer) SET search_path = pg_catalog, pg_temp;
+ALTER FUNCTION trunklet.template__remove(text, integer) SET search_path = pg_catalog, pg_temp;
+ALTER FUNCTION trunklet.process_language(character varying, text, anyelement) SET search_path = pg_catalog, pg_temp;
+ALTER FUNCTION trunklet.process(integer, anyelement) SET search_path = pg_catalog, pg_temp;
+ALTER FUNCTION trunklet.process(text, integer, anyelement) SET search_path = pg_catalog, pg_temp;
+ALTER FUNCTION trunklet.extract_parameters(character varying, anyelement, text[]) SET search_path = pg_catalog, pg_temp;
