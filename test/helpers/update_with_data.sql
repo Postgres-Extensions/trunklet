@@ -1,10 +1,12 @@
 /*
  * Seeds a test language and a test template under TEST_UPDATE_FROM, runs ALTER
- * EXTENSION UPDATE, and checks the version and that the template still
- * processes. It then removes the language and checks that nothing is left
- * behind, so the suite's expected output matches fresh mode.
+ * EXTENSION UPDATE, and checks that the update changed no setting, that the
+ * extension is at the expected version, and that the template still processes.
+ * It then removes the language and checks that nothing is left behind, so the
+ * suite's expected output matches fresh mode.
  *
- * test/install/load.sql runs it in update mode.
+ * test/install/load.sql runs it in update mode, after loading
+ * test/helpers/settings_snapshot.sql.
  */
 CREATE SCHEMA _trunklet_test;
 SET search_path = _trunklet_test;
@@ -13,7 +15,12 @@ SET search_path = _trunklet_test;
 -- Committed before the update, as stored data would be in production
 CREATE TABLE seeded_template_ids AS SELECT get_test_templates() AS ids;
 
+SELECT pg_temp.settings_snapshot();
+-- One transaction, so SET LOCAL leaks from the script are caught (as in load.sql's CREATE)
+BEGIN;
 ALTER EXTENSION trunklet UPDATE;
+SELECT pg_temp.settings_check('ALTER EXTENSION UPDATE');
+COMMIT;
 
 DO $body$
 DECLARE
@@ -30,11 +37,9 @@ BEGIN
 END
 $body$;
 
--- Updating from before 0.3.0 changes search_path, so qualify from here on
-
 DO $body$
 DECLARE
-  c_ids CONSTANT int[] := (SELECT ids FROM _trunklet_test.seeded_template_ids);
+  c_ids CONSTANT int[] := (SELECT ids FROM seeded_template_ids);
   c_parameters CONSTANT text[] := '{}';
   r record;
 BEGIN
@@ -75,7 +80,7 @@ END
 $body$;
 
 -- The language's functions were created by TEST_UPDATE_FROM's code
-SELECT trunklet.template_language__remove(_trunklet_test.get_test_language_name(), cascade => true);
+SELECT trunklet.template_language__remove(get_test_language_name(), cascade => true);
 
 DO $body$
 DECLARE

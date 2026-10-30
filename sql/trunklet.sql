@@ -13,10 +13,9 @@ CREATE SCHEMA __trunklet;
 CREATE TABLE __trunklet.old_settings AS
   SELECT name, setting
     FROM pg_catalog.pg_settings
-    WHERE name IN ('client_min_messages')-- This doesn't actually work as expected :( , 'search_path')
+    WHERE name IN ('search_path')
 ;
-SET client_min_messages = warning;
--- PG apparently truncates the path to a single element, so our reset doesn't work :( SET LOCAL search_path = pg_catalog;
+SET LOCAL search_path = pg_catalog, pg_temp;
 
 DO $do$
 BEGIN
@@ -958,13 +957,8 @@ $body$;
 */
 
 
-SELECT _trunklet.exec(
-    format(
-      'SET %I = %L'
-      , name
-      , setting
-    )
-  )
+-- Use set_config(), not SET LOCAL %I = %L: the latter turns a list setting into one quoted name
+SELECT pg_catalog.set_config(name, setting, true)
   FROM __trunklet.old_settings
 ;
 DROP TABLE __trunklet.old_settings;

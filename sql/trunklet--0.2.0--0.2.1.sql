@@ -7,10 +7,9 @@ CREATE SCHEMA __trunklet;
 CREATE TABLE __trunklet.old_settings AS
   SELECT name, setting
     FROM pg_catalog.pg_settings
-    WHERE name IN ('client_min_messages', 'search_path')
+    WHERE name IN ('search_path')
 ;
-SET client_min_messages = warning;
-SET search_path = pg_catalog;
+SET LOCAL search_path = pg_catalog, pg_temp;
 
 CREATE OR REPLACE FUNCTION _trunklet.template__get(
   template_id _trunklet.template.template_id%TYPE
@@ -263,13 +262,8 @@ $body$;
 
 
 
-SELECT _trunklet.exec(
-    format(
-      'SET %I = %L'
-      , name
-      , setting
-    )
-  )
+-- Use set_config(), not SET LOCAL %I = %L: the latter turns a list setting into one quoted name
+SELECT pg_catalog.set_config(name, setting, true)
   FROM __trunklet.old_settings
 ;
 DROP TABLE __trunklet.old_settings;

@@ -4,12 +4,23 @@
  * and "Update & Upgrade (U&U) Testing" sections). The mode comes from the
  * Makefile's TEST_LOAD_SOURCE / TEST_UPDATE_FROM via PGOPTIONS.
  *
- * This file's output is never compared against anything. Its \set ON_ERROR_STOP
- * makes psql exit non-zero on an error, which fails the run only on PG16+. On
- * PG 9.5-15 a failure surfaces only through the downstream tests.
+ * This file's output is never compared against anything, and an error here
+ * fails the run only by breaking the downstream tests. \set ON_ERROR_STOP makes
+ * psql stop at the first error.
  */
 \set ON_ERROR_STOP on
 
+\i test/helpers/settings_snapshot.sql
+
+-- Below warning, so a plain SET in a script would show (error or higher is not exercised)
+SET client_min_messages = notice;
+SELECT pg_temp.settings_snapshot();
+
+/*
+ * One transaction, so a failed settings check rolls back the install and the
+ * downstream tests fail
+ */
+BEGIN;
 -- Branches server-side because \if needs psql 10+
 DO $body$
 DECLARE
@@ -28,6 +39,8 @@ BEGIN
   END IF;
 END
 $body$;
+SELECT pg_temp.settings_check('CREATE EXTENSION');
+COMMIT;
 
 -- Update mode only: update_with_data.sql does the ALTER EXTENSION UPDATE. Branches
 -- server-side for the same reason as above.
