@@ -615,18 +615,23 @@ BEGIN
       ) a
   ;
 
+  -- Exact value: pg_temp must come after pg_catalog or it can shadow it
   RETURN QUERY SELECT is(
         proconfig
-        , '{search_path=pg_catalog}'
+        , ARRAY['search_path=pg_catalog, pg_temp']
         , 'Verify search_path for ' || full_name
       )
     -- This silliness is necessary to ensure stable ordering of the test
     FROM (
-      SELECT *, p.oid::regprocedure AS full_name
+      SELECT p.proconfig, p.oid::regprocedure AS full_name
         FROM pg_proc p
-          JOIN pg_namespace n ON n.oid = p.pronamespace
-        WHERE nspname = 'trunklet'
-          AND prosecdef
+          JOIN pg_depend d
+            ON d.classid = 'pg_proc'::regclass
+              AND d.objid = p.oid
+              AND d.deptype = 'e'
+              AND d.refclassid = 'pg_extension'::regclass
+              AND d.refobjid = (SELECT oid FROM pg_extension WHERE extname = 'trunklet')
+        WHERE prosecdef
         -- Cast to text is necessary to avoid ordering by the actual OID in
         -- 9.5. COLLATE is necessary to ensure a consistent order.
         ORDER BY p.oid::regprocedure::text COLLATE "C"
