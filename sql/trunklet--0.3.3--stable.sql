@@ -20,6 +20,7 @@ EXCEPTION
 END
 $body$;
 
+-- Match the SECURITY DEFINER search_path in a fresh install
 ALTER FUNCTION trunklet.template__add(character varying, text, integer, text) SET search_path = pg_catalog, pg_temp;
 ALTER FUNCTION trunklet.template__remove(integer) SET search_path = pg_catalog, pg_temp;
 ALTER FUNCTION trunklet.template__remove(text, integer) SET search_path = pg_catalog, pg_temp;

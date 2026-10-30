@@ -615,17 +615,11 @@ BEGIN
       ) a
   ;
 
-  -- pg_temp must be listed last, or it is searched first
+  -- Exact value: pg_temp must come after pg_catalog or it can shadow it
   RETURN QUERY SELECT is(
-        (
-          SELECT btrim((string_to_array(substr(c, length('search_path=') + 1), ','))[
-              cardinality(string_to_array(substr(c, length('search_path=') + 1), ','))
-            ])
-            FROM unnest(proconfig) c
-            WHERE c LIKE 'search_path=%'
-        )
-        , 'pg_temp'
-        , 'Verify search_path ends with pg_temp for ' || full_name
+        proconfig
+        , ARRAY['search_path=pg_catalog, pg_temp']
+        , 'Verify search_path for ' || full_name
       )
     -- This silliness is necessary to ensure stable ordering of the test
     FROM (
