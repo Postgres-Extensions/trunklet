@@ -9,7 +9,7 @@ CREATE TABLE __trunklet.old_settings AS
     FROM pg_catalog.pg_settings
     WHERE name IN ('client_min_messages', 'search_path')
 ;
--- Released as plain SET, which leaks the setting to the caller
+-- Released as plain SET, which leaks both settings to the caller
 SET LOCAL client_min_messages = warning;
 SET LOCAL search_path = pg_catalog;
 

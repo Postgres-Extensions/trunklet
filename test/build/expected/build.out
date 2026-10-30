@@ -1,4 +1,6 @@
 \set ECHO none
+ public, pg_temp
+
 1..5
 ok 1 - settings_snapshot() saved the caller's settings
 ok 2 - CREATE EXTENSION trunklet;

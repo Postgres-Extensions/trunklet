@@ -957,7 +957,7 @@ $body$;
 */
 
 
--- set_config() parses a list setting; SET LOCAL %I = %L would turn it into one quoted name
+-- Use set_config(), not SET LOCAL %I = %L: the latter turns a list setting into one quoted name
 SELECT pg_catalog.set_config(name, setting, true)
   FROM __trunklet.old_settings
 ;
