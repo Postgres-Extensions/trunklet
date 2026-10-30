@@ -9,7 +9,7 @@ CREATE TABLE __trunklet.old_settings AS
     FROM pg_catalog.pg_settings
     WHERE name IN ('search_path')
 ;
-SET LOCAL search_path = pg_catalog;
+SET LOCAL search_path = pg_catalog, pg_temp;
 
 CREATE OR REPLACE FUNCTION _trunklet.template__get(
   template_id _trunklet.template.template_id%TYPE
@@ -262,13 +262,8 @@ $body$;
 
 
 
-SELECT _trunklet.exec(
-    format(
-      'SET LOCAL %I = %L'
-      , name
-      , setting
-    )
-  )
+-- set_config() parses a list setting; SET LOCAL %I = %L would turn it into one quoted name
+SELECT pg_catalog.set_config(name, setting, true)
   FROM __trunklet.old_settings
 ;
 DROP TABLE __trunklet.old_settings;

@@ -1,11 +1,7 @@
 \set ECHO none
- exec 
-------
- 
-(1 row)
-
-1..4
-ok 1 - CREATE EXTENSION trunklet;
-ok 2 - CREATE EXTENSION changed no setting
-ok 3 - Schema __trunklet should not exist
-ok 4 - DROP EXTENSION trunklet;
+1..5
+ok 1 - settings_snapshot() saved the caller's settings
+ok 2 - CREATE EXTENSION trunklet;
+ok 3 - CREATE EXTENSION changed no setting
+ok 4 - Schema __trunklet should not exist
+ok 5 - DROP EXTENSION trunklet;

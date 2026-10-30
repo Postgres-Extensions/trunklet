@@ -5,15 +5,21 @@
 
 BEGIN;
 SET LOCAL client_min_messages = warning;
+-- Discards the set-back's set_config() result row, which depends on the server's default search_path
+\o /dev/null
 \i sql/trunklet.sql
+\o
 ROLLBACK;
 
 BEGIN;
 \i test/helpers/tap_setup.sql
 \i test/helpers/settings_snapshot.sql
-SELECT pg_temp.settings_snapshot() AS snapshot \gset
+SELECT plan(5);
 
-SELECT plan(4);
+SELECT lives_ok(
+    $$SELECT pg_temp.settings_snapshot()$$
+    , 'settings_snapshot() saved the caller''s settings'
+);
 
 SELECT lives_ok(
     'CREATE EXTENSION trunklet;'

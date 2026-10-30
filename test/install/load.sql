@@ -12,12 +12,14 @@
 
 \i test/helpers/settings_snapshot.sql
 
--- Below warning, so the server saves it and a plain SET in a script would show (error or higher is not exercised)
+-- Below warning, so a plain SET in a script would show (error or higher is not exercised)
 SET client_min_messages = notice;
 SELECT pg_temp.settings_snapshot();
 
--- One transaction, so a failed settings check rolls back the install and the
--- downstream tests fail
+/*
+ * One transaction, so a failed settings check rolls back the install and the
+ * downstream tests fail
+ */
 BEGIN;
 -- Branches server-side because \if needs psql 10+
 DO $body$

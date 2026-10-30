@@ -16,8 +16,11 @@ SET search_path = _trunklet_test;
 CREATE TABLE seeded_template_ids AS SELECT get_test_templates() AS ids;
 
 SELECT pg_temp.settings_snapshot();
+-- One transaction, so SET LOCAL leaks from the script are caught (as in load.sql's CREATE)
+BEGIN;
 ALTER EXTENSION trunklet UPDATE;
 SELECT pg_temp.settings_check('ALTER EXTENSION UPDATE');
+COMMIT;
 
 DO $body$
 DECLARE

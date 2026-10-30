@@ -4,11 +4,10 @@
  *
  */
 
--- Released as plain SET, which leaks the setting to the caller
+-- Both released as plain SET, which leaks the setting to the caller
 SET LOCAL client_min_messages = warning;
 
 -- Set a safe search_path
--- Released as plain SET, which leaks the setting to the caller
 SET LOCAL search_path = pg_catalog;
 
 DO $do$
